@@ -20,7 +20,7 @@ const SCREEN_SIZE: (i32, i32) = (
     GRID_SIZE.1 * GRID_CELL_SIZE.1,
 );
 
-const UPDATES_PER_SECOND: f32 = 10.0;
+const UPDATES_PER_SECOND: f32 = 2.0;
 const MILLIS_PER_UPDATE: u64 = (1.0 / UPDATES_PER_SECOND * 1000.0) as u64;
 
 struct MainState {
@@ -30,10 +30,6 @@ struct MainState {
     start_time: Instant,
     updates_so_far: i32,
     board: Board,
-    min_x: i32,
-    max_x: i32,
-    min_y: i32,
-    max_y: i32,
 }
 
 struct Board {
@@ -63,7 +59,7 @@ struct FixedBlock {
 
 impl MainState {
     fn new(_ctx: &mut Context) -> GameResult<MainState> {
-        let mut s = MainState {
+        Ok(MainState {
             pos: na::Point2::new(rand::thread_rng().gen_range(0, 15), 0),
             facing: 0,
             start_time: Instant::now(),
@@ -72,16 +68,7 @@ impl MainState {
             board: Board {
                 data: [[None; 16]; 32],
             },
-            min_x: 0,
-            max_x: 0,
-            min_y: 0,
-            max_y: 0,
-        };
-        s.min_x = s.tetromino.min_x(s.facing);
-        s.max_x = s.tetromino.max_x(s.facing);
-        s.min_y = s.tetromino.min_y(s.facing);
-        s.max_y = s.tetromino.max_y(s.facing);
-        Ok(s)
+        })
     }
     fn not_overlapping_down(&self) -> bool {
         self.tetromino
@@ -98,6 +85,12 @@ impl MainState {
     fn not_overlapping_right(&self) -> bool {
         self.tetromino
             .blocks(self.pos + na::Vector2::new(1, 0), self.facing)
+            .into_iter()
+            .all(|block| self.board.get(block) == Some(&None))
+    }
+    fn not_overlapping_rotate(&self) -> bool {
+        self.tetromino
+            .blocks(self.pos, self.facing + 1)
             .into_iter()
             .all(|block| self.board.get(block) == Some(&None))
     }
@@ -120,16 +113,28 @@ impl event::EventHandler for MainState {
                         _ => panic!("{:?}", block),
                     }
                 }
+                for y in 0..self.board.data.len() {
+                    if self.board.data[y].iter().all(Option::is_some) {
+                        for higher in (0..y).rev() {
+                            let lower = higher + 1;
+                            for x in 0..GRID_SIZE.0 {
+                                *self.board.get_mut(na::Point2::new(x, lower as i32)).unwrap() =
+                                    *self.board.get(na::Point2::new(x, higher as i32)).unwrap();
+                            }
+                        }
+                    }
+                }
+
                 self.tetromino = rand::random();
                 self.facing = rand::thread_rng().gen_range(0, 4);
 
-                self.min_x = self.tetromino.min_x(self.facing);
-                self.max_x = self.tetromino.max_x(self.facing);
+                let min_x = self.tetromino.min_x(self.facing);
+                let max_x = self.tetromino.max_x(self.facing);
 
-                self.pos[0] = rand::thread_rng().gen_range(-self.min_x, 16 - self.max_x);
+                self.pos[0] = rand::thread_rng().gen_range(-min_x, 16 - max_x);
 
-                self.min_y = self.tetromino.min_y(self.facing);
-                self.pos[1] = -self.min_y;
+                let min_y = self.tetromino.min_y(self.facing);
+                self.pos[1] = -min_y;
             }
             self.updates_so_far += 1;
         }
@@ -166,38 +171,38 @@ impl event::EventHandler for MainState {
                 };
             }
         }
+
+
         graphics::present(ctx)?;
         Ok(())
     }
 
     fn key_down_event(
         &mut self,
-        ctx: &mut Context,
+        _ctx: &mut Context,
         keycode: KeyCode,
         _keymods: KeyMods,
         _repeat: bool,
     ) {
         match keycode {
             KeyCode::Left => {
-                if self.pos[0] > -self.min_x && self.not_overlapping_left() {
+                if self.not_overlapping_left() {
                     self.pos[0] -= 1
                 }
             }
             KeyCode::Right => {
-                if self.pos[0] < (15 - self.max_x) && self.not_overlapping_right() {
+                if self.not_overlapping_right() {
                     self.pos[0] += 1
                 }
             }
             KeyCode::Up => {
-                if self.not_overlapping_left()
-                    && self.not_overlapping_right()
-                    && self.not_overlapping_down()
+                if self.not_overlapping_rotate()
                 {
                     self.facing += 1
                 }
             }
             KeyCode::Down => {
-                if self.pos[1] < 15 - self.max_y {
+                if self.not_overlapping_down() {
                     self.pos[1] += 1
                 }
             }
@@ -333,7 +338,7 @@ impl Tetromino {
             .min()
             .unwrap()
     }
-    fn max_y(self, facing: u8) -> i32 {
+    pub fn max_y(self, facing: u8) -> i32 {
         self.blocks(na::Point2::new(0, 0), facing)
             .into_iter()
             .map(|block| block[1])
