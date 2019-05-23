@@ -83,6 +83,24 @@ impl MainState {
         s.max_y = s.tetromino.max_y(s.facing);
         Ok(s)
     }
+    fn not_overlapping_down(&self) -> bool {
+        self.tetromino
+            .blocks(self.pos + na::Vector2::new(0, 1), self.facing)
+            .into_iter()
+            .all(|block| self.board.get(block) == Some(&None))
+    }
+    fn not_overlapping_left(&self) -> bool {
+        self.tetromino
+            .blocks(self.pos + na::Vector2::new(-1, 0), self.facing)
+            .into_iter()
+            .all(|block| self.board.get(block) == Some(&None))
+    }
+    fn not_overlapping_right(&self) -> bool {
+        self.tetromino
+            .blocks(self.pos + na::Vector2::new(1, 0), self.facing)
+            .into_iter()
+            .all(|block| self.board.get(block) == Some(&None))
+    }
 }
 
 impl event::EventHandler for MainState {
@@ -90,12 +108,7 @@ impl event::EventHandler for MainState {
         if Instant::now() - self.start_time
             >= Duration::from_millis(MILLIS_PER_UPDATE * self.updates_so_far as u64)
         {
-            if self
-                .tetromino
-                .blocks(self.pos + na::Vector2::new(0, 1), self.facing)
-                .into_iter()
-                .all(|block| self.board.get(block) == Some(&None))
-            {
+            if self.not_overlapping_down() {
                 self.pos[1] += 1;
             } else {
                 let fixed_block = FixedBlock {
@@ -112,9 +125,9 @@ impl event::EventHandler for MainState {
 
                 self.min_x = self.tetromino.min_x(self.facing);
                 self.max_x = self.tetromino.max_x(self.facing);
-                
+
                 self.pos[0] = rand::thread_rng().gen_range(-self.min_x, 16 - self.max_x);
-                
+
                 self.min_y = self.tetromino.min_y(self.facing);
                 self.pos[1] = -self.min_y;
             }
@@ -166,21 +179,33 @@ impl event::EventHandler for MainState {
     ) {
         match keycode {
             KeyCode::Left => {
-                if self.pos[0] > -self.min_x{
+                if self.pos[0] > -self.min_x && self.not_overlapping_left() {
                     self.pos[0] -= 1
                 }
-            },
+            }
             KeyCode::Right => {
-                if self.pos[0] < (15 - self.max_x) {
+                if self.pos[0] < (15 - self.max_x) && self.not_overlapping_right() {
                     self.pos[0] += 1
                 }
-            },
-            KeyCode::Up => self.facing += 1,
+            }
+            KeyCode::Up => {
+                if self.not_overlapping_left()
+                    && self.not_overlapping_right()
+                    && self.not_overlapping_down()
+                {
+                    self.facing += 1
+                }
+            }
             KeyCode::Down => {
                 if self.pos[1] < 15 - self.max_y {
                     self.pos[1] += 1
                 }
-            },
+            }
+            KeyCode::Space => {
+                while self.not_overlapping_down() {
+                    self.pos[1] += 1
+                }
+            }
             _ => (),
         }
     }
@@ -288,32 +313,28 @@ impl Tetromino {
         }
     }
     fn min_x(self, facing: u8) -> i32 {
-        self
-            .blocks(na::Point2::new(0, 0), facing)
+        self.blocks(na::Point2::new(0, 0), facing)
             .into_iter()
             .map(|block| block[0])
             .min()
             .unwrap()
     }
     fn max_x(self, facing: u8) -> i32 {
-        self
-            .blocks(na::Point2::new(0, 0), facing)
+        self.blocks(na::Point2::new(0, 0), facing)
             .into_iter()
             .map(|block| block[0])
             .max()
             .unwrap()
     }
     fn min_y(self, facing: u8) -> i32 {
-        self
-            .blocks(na::Point2::new(0, 0), facing)
+        self.blocks(na::Point2::new(0, 0), facing)
             .into_iter()
             .map(|block| block[1])
             .min()
             .unwrap()
     }
     fn max_y(self, facing: u8) -> i32 {
-        self
-            .blocks(na::Point2::new(0, 0), facing)
+        self.blocks(na::Point2::new(0, 0), facing)
             .into_iter()
             .map(|block| block[1])
             .max()
