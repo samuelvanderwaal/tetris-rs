@@ -30,6 +30,7 @@ struct MainState {
     start_time: Instant,
     updates_so_far: i32,
     board: Board,
+    game_over: bool,
 }
 
 struct Board {
@@ -68,6 +69,7 @@ impl MainState {
             board: Board {
                 data: [[None; 16]; 32],
             },
+            game_over: false,
         })
     }
     fn not_overlapping_down(&self) -> bool {
@@ -101,42 +103,49 @@ impl event::EventHandler for MainState {
         if Instant::now() - self.start_time
             >= Duration::from_millis(MILLIS_PER_UPDATE * self.updates_so_far as u64)
         {
-            if self.not_overlapping_down() {
-                self.pos[1] += 1;
-            } else {
-                let fixed_block = FixedBlock {
-                    tetromino: self.tetromino,
-                };
-                for block in self.tetromino.blocks(self.pos, self.facing) {
-                    match self.board.get_mut(block) {
-                        Some(ref mut a) if a.is_none() => **a = Some(fixed_block),
-                        _ => panic!("{:?}", block),
-                    }
-                }
-                for y in 0..self.board.data.len() {
-                    if self.board.data[y].iter().all(Option::is_some) {
-                        for higher in (0..y).rev() {
-                            let lower = higher + 1;
-                            for x in 0..GRID_SIZE.0 {
-                                *self.board.get_mut(na::Point2::new(x, lower as i32)).unwrap() =
-                                    *self.board.get(na::Point2::new(x, higher as i32)).unwrap();
+            if !self.game_over {
+                if self.not_overlapping_down() {
+                    self.pos[1] += 1;
+                } else {
+                    let fixed_block = FixedBlock {
+                        tetromino: self.tetromino,
+                    };
+                    for block in self.tetromino.blocks(self.pos, self.facing) {
+                        match self.board.get_mut(block) {
+                            Some(ref mut a) if a.is_none() => **a = Some(fixed_block),
+                            _ => {
+                                self.game_over = true;
                             }
                         }
                     }
+                    for y in 0..self.board.data.len() {
+                        if self.board.data[y].iter().all(Option::is_some) {
+                            for higher in (0..y).rev() {
+                                let lower = higher + 1;
+                                for x in 0..GRID_SIZE.0 {
+                                    *self
+                                        .board
+                                        .get_mut(na::Point2::new(x, lower as i32))
+                                        .unwrap() =
+                                        *self.board.get(na::Point2::new(x, higher as i32)).unwrap();
+                                }
+                            }
+                        }
+                    }
+
+                    self.tetromino = rand::random();
+                    self.facing = rand::thread_rng().gen_range(0, 4);
+
+                    let min_x = self.tetromino.min_x(self.facing);
+                    let max_x = self.tetromino.max_x(self.facing);
+
+                    self.pos[0] = rand::thread_rng().gen_range(-min_x, 16 - max_x);
+
+                    let min_y = self.tetromino.min_y(self.facing);
+                    self.pos[1] = -min_y;
                 }
-
-                self.tetromino = rand::random();
-                self.facing = rand::thread_rng().gen_range(0, 4);
-
-                let min_x = self.tetromino.min_x(self.facing);
-                let max_x = self.tetromino.max_x(self.facing);
-
-                self.pos[0] = rand::thread_rng().gen_range(-min_x, 16 - max_x);
-
-                let min_y = self.tetromino.min_y(self.facing);
-                self.pos[1] = -min_y;
+                self.updates_so_far += 1;
             }
-            self.updates_so_far += 1;
         }
         Ok(())
     }
@@ -172,7 +181,6 @@ impl event::EventHandler for MainState {
             }
         }
 
-
         graphics::present(ctx)?;
         Ok(())
     }
@@ -196,8 +204,7 @@ impl event::EventHandler for MainState {
                 }
             }
             KeyCode::Up => {
-                if self.not_overlapping_rotate()
-                {
+                if self.not_overlapping_rotate() {
                     self.facing += 1
                 }
             }
